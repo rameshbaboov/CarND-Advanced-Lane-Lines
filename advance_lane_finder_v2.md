@@ -101,7 +101,7 @@ I used a combination of color and gradient thresholds to generate a binary image
 
 I tested various images for each of these techniques with various thresholds and decided to go with only few methods to get the desired output. However, almost all of these methods were not working for atleast one or two scenarios and most of them like HLS Channels had unwanted pixels along with lanes. So the final binary image had multiple peaks in histogram. so to avoid this, I created a ROI and applied that to the output of these channels to remove these noises.
 
-A combination of below thresholds is used to calculate the final binary image
+A combination of below thresholds is used to calculate the final binary image. I ignored the other thresholds as they were not producing satisfactory results and with these functions alone, I was able to identify the lanes
 
 1. Sobel X
 2. Sobel Direction
@@ -157,7 +157,15 @@ The function unwarp_image does the perspective transformation using cv2.getPersp
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-Lane fitting is done using the below functions:
+Lane fitting is done using the below logic:
+
+1. Histogram of the binary image is calculated to arrive at the two lanes where the heights are at maximum
+2. The two base positions of leftx and rightx are identified and the lanes are extrapolated in the y direction using second order polynomial - f(y)=Ay**2 + By  + C. 
+3. Coeffecient A, B and C are arrived as L_fit and R_Fit using Poly function
+4. For subsequent images, instead of starting from start, the original positions of the previous image is used to extrapolate
+5. To fit the lanes, coefficients are substituted along with various values of y as identified by linspace.  
+
+Below are the places in the code where the above logic is implemented:
 
 Fully_process_images:  This function invokes the pipeline to get the binary image and calls Sliding_window_polyfit that does the sliding window polyfit. This function returns the left and right fit co-efficients along with the right and left lane indices and the histogram of the binary image. Once the fit is identified, poly_next_fit is identified for the subsequent images. The fits are added to the Left Line and Right Line instance of class Line. Draw_Line function draws the lane based on teh identified fits. Sliding Window polyfit does the below:
 
@@ -199,8 +207,15 @@ Here is the output
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
+```
+
 function to determine radius of curvature and distance from lane center based on binary image, polynomial fit is defined in calculate_rad and draw_curvature
 
+The radius of curvature is defined by the function
+
+Radius of curve = [((1 + (dx/dy)**2)]**1.5/(f``y)
+
+```
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
 ![png](output_6_16.png)
