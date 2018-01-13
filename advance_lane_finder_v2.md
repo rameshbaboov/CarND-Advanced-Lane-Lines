@@ -30,6 +30,8 @@ This project has implemented the following steps
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position
 
+I tested the pipeline first on single image to check if the binary output was as expected. Then i tested the application on multiple images including those images where tree shades falls on the lane. Once this is done, i tested my application on full code and then later with the video
+
 ### Camera Calibration
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
