@@ -5,7 +5,7 @@
 
 The goals / steps of this project are the following:
 
-1. Create a software application that can calibrate the camera images for distortion so that the actual images are undistored
+1. Create a software application that can calibrate the camera images for distortion so that the actual images are corrected for distortion.
 2. Create a pipeline and test the pipeline to convert a camera image into a binary image that identifies the lanes after undistortion
 3. Create additional code that identifies the lane position and apply the same on the original image to identify the lanes
 4. Test the application on few test images 
