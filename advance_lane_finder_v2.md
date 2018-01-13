@@ -169,20 +169,167 @@ ret,mtx,dist,rvecs,tvecs = calibrate_camera(path1,69)#################    test i
 
 ### Pipeline (single images)
 
+Here is the code for the pipeline
+
+```python
+def pipeline_image_processing(test_img,imagename):
+    
+    # undistor image
+  
+    test_img_undistort = undistort_img(test_img,mtx,dist)
+    height,width = test_img_undistort.shape[:2]
+    
+    # define source and destination points for transform
+    src = np.float32([(575,464),
+                  (707,464), 
+                  (258,682), 
+                  (1049,682)])
+    dst = np.float32([(450,0),
+                  (width-450,0),
+                  (450,height),
+                  (width-450,height)])
+     
+    # map the src and dst points
+    if debug_flag == True:
+        print('undistored image')
+        print("height is", height)
+        print("width is", width)
+        print("src is ", src)
+        print("dest is ", dst)
+    # perspective transformation
+    vertices = np.array([[300, 0], [300,700], [1000,700], [1000,0]])
+   
+    test_img_unwarp, M, Minv = unwarp_image(test_img_undistort,src,dst)
+
+    if output_flag == True:
+        fig,(axs1,axs2) = plt.subplots(1,2, figsize=(20, 10))
+        fig.subplots_adjust(hspace = .2, wspace=.001)
+        
+        axs1.imshow(test_img)
+        axs1.annotate('A',xy=(575,464),fontsize=20)
+        axs1.annotate('B',xy=(707,464),fontsize=20)
+        axs1.annotate('C',xy=(258,682),fontsize=20)
+        axs1.annotate('D',xy=(1049,682),fontsize=20)
+           
+        axs2.imshow(test_img_unwarp)
+        axs2.annotate('A',xy=(450,0),fontsize=20)
+        axs2.annotate('B',xy=(width-450,0),fontsize=20)
+        axs2.annotate('C',xy=(450,height),fontsize=20)
+        axs2.annotate('D',xy=(width-450,height),fontsize=20)
+        
+    # Sobel Magnitude (using default parameters)
+    img_sobel_Mag = set_ROI(mag_thresh(test_img_unwarp),vertices)
+    
+    # Sobel Direction (using default parameters)
+    img_sobel_dir = set_ROI(dir_threshold(test_img_unwarp),vertices)
+    
+    if debug_flag == True:
+        print('shape of img_sobel_Mg', img_sobel_Mag.shape)
+        print('shape of img_sobel_dir', img_sobel_dir.shape)
+        
+    # HLS H-channel Threshold
+    img_hls_h = set_ROI(hls_h_select(test_img_unwarp),vertices)
+    
+    # HLS S-channel Threshold
+    img_hls_s = set_ROI(hls_s_select(test_img_unwarp),vertices)
+    
+    # HLS L-channel Threshold
+    img_hls_l = set_ROI(hls_l_select(test_img_unwarp),vertices)
+    
+    #Sobel X and Y
+    img_gradx = set_ROI(abs_sobel_thresh(test_img_unwarp, orient ='x', sobel_kernel = 3, thresh=(30,255)),vertices)
+    
+    img_grady = set_ROI(abs_sobel_thresh(test_img_unwarp, orient ='y', sobel_kernel = 3, thresh=(30,255)),vertices)
+    
+    combined = np.zeros_like(img_sobel_Mag)
+    
+    if output_flag == True:
+    
+        draw_simple_chart(test_img,test_img_undistort,'Original image','undistored image')
+        draw_simple_chart(test_img,test_img_unwarp,'Original image','Perspective Transformed image')
+        draw_simple_chart(test_img,img_sobel_dir,'Original image','Sobel Direction')
+        draw_simple_chart(test_img,img_sobel_Mag,'Original image','Sobel Magnitude')
+        draw_simple_chart(test_img,img_gradx,'Original image','Gradx')
+        draw_simple_chart(test_img,img_grady,'Original image','Grady')
+        draw_chart_channels(img_hls_h,img_hls_l,img_hls_s,"h channel","l channel","s channel")
+
+    combined[ ((img_gradx == 1) | (img_sobel_dir ==1) | ((img_hls_s ==1) & (img_hls_l ==1)))] =1
+    
+    if debug_flag == True:
+        print('combined initial shape', combined.shape)
+        print('shape of img_gradx', img_gradx.shape)
+        print('shape of img_grady', img_grady.shape)
+        print('combined final shape', combined.shape)
+        print('exiting pipeline processing')
+
+    if final_flag == True:
+        draw_simple_chart(test_img,combined,"original","binary")
+    return combined, Minv     
+
+
+```
+
 #### 1. Provide an example of a distortion-corrected image.
 
+Here is the code for distortion correction:
+
+```python
+
+# function undistors the image
+def undistort_img(img,mtx,dist):
+    img = cv2.undistort(img,mtx,dist,None,mtx)
+    return img
+```
 To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
+
+
+![png](output_6_1.png)
+
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+I used a combination of color and gradient thresholds to generate a binary image. Below are the details
 
-![alt text][image3]
+1. HLS Channels
+2. Sobel Magnitude
+3. Sobel Direction
+4. Sobel X and Y
+
+I tested various images for each of these techniques with various thresholds and decided to go with only few methods to get the desired output. Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+
+
+
+![png](output_6_2.png)
+
+
+
+![png](output_6_3.png)
+
+
+
+![png](output_6_4.png)
+
+
+
+![png](output_6_5.png)
+
+
+
+![png](output_6_6.png)
+
+
+
+![png](output_6_7.png)
+
+
+
+![png](output_6_8.png)
+
+
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+I selected 
 
 ```python
 src = np.float32(
@@ -242,6 +389,12 @@ Here's a [link to my video result](./project_video.mp4)
 
 Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
 
+
+
+
+
+
+## Here is the main code
 
 
 ```python
