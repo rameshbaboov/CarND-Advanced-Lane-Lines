@@ -886,9 +886,6 @@ def write_Text(original_img, curv_rad, center_dist):
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
-
-
 ![png](output_6_16.png)
 
 
@@ -896,7 +893,7 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./project_video_output.mp4)
 
 ---
 
@@ -904,11 +901,7 @@ Here's a [link to my video result](./project_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
-
-
-
-
+My implementation fails partially for Challenge and fully for the other challenging video. I believe this is because, fitting needs to be improved in my code. Also i had set ROI to filter noises. Hence this is creating issues when the lane curvature is very high and implementation tries to map the lane within ROI and hence lanes are not correctly mapped. Also i need to look for other color thresholds and other pre processing technique to improve the binary image quality
 
 
 ## Here is the main code
