@@ -6,16 +6,14 @@ The goals / steps of this project are the following:
 1. Create a software application that can calibrate the camera images for distortion so that the actual images are undistored
 2. Create a pipeline and test the pipeline to convert a camera image into a binary image that identifies the lanes after undistortion
 3. Create additional code that identifies the lane position and apply the same on the original image to identify the lanes
-4. Test the application on few 
+4. Test the application on few test images 
+5. Finally test the application on videos and create an output video with lanes identified
 
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
 ### Here I have considered the rubric points individually and described how I addressed each point in my implementation.  
 
----
-
-### Writeup / README
 
 #### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
 
@@ -34,13 +32,140 @@ This project has implemented the following steps
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
 
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
-
 I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
 
 I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
 
-![alt text][image1]
+```python
+#---------------------------------------------------------------------------------------------------------------------------#
+
+# this function calibrates the camera. Takes inputs as Path- Path where calibration images are present.
+# Imgcornertype 69 or 68 depending upon no of corners
+# function returns - ret,mtx,dist,rvecs,tvecs
+
+def calibrate_camera(path,imgcornertype):
+    
+    if debug_flag == True:
+        print("starting camera calibration")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    
+    #initialize arrays to store object and image points
+    objpoints = [] #3d points in real world space
+    imgpoints = [] #2d points in image space
+    
+    if output_flag == True:
+        fig, axs = plt.subplots(5,4, figsize=(16, 11))
+        fig.subplots_adjust(hspace = .2, wspace=.001)
+        axs = axs.ravel()
+    
+    if imgcornertype == 69:
+        objp = np.zeros((6*9,3), np.float32)
+        objp[:,:2] = np.mgrid[0:9,0:6].T.reshape(-1,2)
+    elif imgcornertype == 68:
+        objp = np.zeros((6*8,3),np.float32)
+        objp[:,:2] = np.mgrid[0:8,0:6].T.reshape(-1,2)
+            
+    if imgcornertype == 69:
+        cory = 9
+        corx = 6
+    elif imgcornertype == 68:
+        corx = 6
+        cory = 8
+    index = 0 
+    
+    for imagename in os.listdir(path):
+        
+        img = cv2.imread(path + imagename)
+        if output_flag == True:
+            print('calibrating camera for image', imagename)
+            #plt.imshow(img)
+            #plt.show()
+
+        # Conver to grayscale
+        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+
+        # find chessboard corners
+        ret,corners = cv2.findChessboardCorners(gray,(cory,corx),None)
+               
+
+        #if corners are found, add object points, img points
+        if ret == True:
+            imgpoints.append(corners)
+            objpoints.append(objp)
+            img = cv2.drawChessboardCorners(img,(cory,corx),corners,ret)
+            if output_flag == True:
+                axs[index].axis('off')
+                axs[index].imshow(img)
+                index += 1
+            if debug_flag == True:
+                print("corner identified for image",imagename)
+                print("corner shape is ", corners.shape)
+                print("corner is ", corners)
+                       
+        else:
+             if debug_flag == True:
+                    print("corners not identified for image",imagename)
+
+
+    #get calibration matrix
+    ret,mtx,dist,rvecs,tvecs = cv2.calibrateCamera(objpoints,imgpoints,gray.shape[::-1],None,None)
+    
+
+    if debug_flag == True:
+        print(gray.shape[::-1])
+        print("ret is ",ret)
+        print("mtx is", mtx)
+        print("dist is", dist)
+        print("rvecs is ", rvecs)
+        print("tvecs is", tvecs)
+        print("camera calibration done. ")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+    # delete unwanted objects        
+    del objpoints
+    del imgpoints
+    
+    return ret,mtx,dist,rvecs,tvecs
+
+```
+This is the main code where Camera calibration happens.
+
+```python
+# Callibrate  Camera
+output_flag = True
+path1 = "./camera_cal/"
+ret,mtx,dist,rvecs,tvecs = calibrate_camera(path1,69)#################    test images with pipeline to identify lane  #########################
+
+```
+### Output of camera calibration
+
+    calibrating camera for image calibration10.jpg
+    calibrating camera for image calibration6.jpg
+    calibrating camera for image calibration9.jpg
+    calibrating camera for image calibration7.jpg
+    calibrating camera for image calibration19.jpg
+    calibrating camera for image calibration20.jpg
+    calibrating camera for image calibration16.jpg
+    calibrating camera for image calibration1.jpg
+    calibrating camera for image calibration17.jpg
+    calibrating camera for image calibration2.jpg
+    calibrating camera for image calibration8.jpg
+    calibrating camera for image calibration4.jpg
+    calibrating camera for image calibration15.jpg
+    calibrating camera for image calibration3.jpg
+    calibrating camera for image calibration14.jpg
+    calibrating camera for image calibration11.jpg
+    calibrating camera for image calibration13.jpg
+    calibrating camera for image calibration12.jpg
+    calibrating camera for image calibration5.jpg
+    calibrating camera for image calibration18.jpg
+
+
+
+![png](output_4_1.png)
+
+
+
 
 ### Pipeline (single images)
 
