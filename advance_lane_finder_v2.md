@@ -297,7 +297,23 @@ I used a combination of color and gradient thresholds to generate a binary image
 3. Sobel Direction
 4. Sobel X and Y
 
-I tested various images for each of these techniques with various thresholds and decided to go with only few methods to get the desired output. Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+I tested various images for each of these techniques with various thresholds and decided to go with only few methods to get the desired output. However, almost all of these methods were not working for atleast one or two scenarios and most of them like HLS Channels had unwanted pixels along with lanes. So the final binary image had multiple peaks in histogram. so to avoid this, I created a ROI and applied that to the output of these channels to remove these noises.
+
+```python
+# set ROI for an image img based on the input vertices
+def set_ROI(img,vertices):
+    mask = np.zeros_like(img)
+    if len(img.shape) > 2:
+        channel_count = img.shape[2]  
+        ignore_mask_color = (255,) * channel_count
+    else:
+        ignore_mask_color = 255
+    cv2.fillPoly(mask, np.int32([vertices]), ignore_mask_color)
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+```
+
+Here's an example of my output for this step.  (note: this is not actually from one of the test images)
 
 
 
@@ -331,51 +347,550 @@ I tested various images for each of these techniques with various thresholds and
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-I selected 
+I selected the points by ensuring that the points exactly covered the lane.
+
+![png](output_6_0.png)
+
+I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.  Here is the code for the perspective transformation. The code returns the warped image, M and Minv (for later applying reverse transformation)
 
 ```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
+ src = np.float32([(575,464),
+                  (707,464), 
+                  (258,682), 
+                  (1049,682)])
+    dst = np.float32([(450,0),
+                  (width-450,0),
+                  (450,height),
+                  (width-450,height)])
+                  
+# function does a perspective transformation
+def unwarp_image(img, src, dst):
+    height,width = img.shape[:2]
+    M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
+    warped = cv2.warpPerspective(img, M, (width,height), flags=cv2.INTER_LINEAR)
+    return warped, M, Minv
+    
 ```
 
-This resulted in the following source and destination points:
-
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
-
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
-
-![alt text][image4]
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+Below is the code here lanes are identified and poly fitting is done. 
 
-![alt text][image5]
+```python
+
+#function to process multiple images using the Pipeline and does the below functions in addition to the pipeline:
+#   1. Lane fitting
+#   2. creating an image with polyfill to cast the lanes
+#   3. recasting the polyfill image on the original image
+#   4. Draw teh lane based on the above
+#   5. caculate the radius and curature
+
+
+def Fully_process_images(img,imagename):
+   
+    if debug_flag == True:
+        print('starting process multiple iamges')
+        print('starting pipeline process for ', imagename)
+        print("l-allx",l_line.allx)
+        print("r-allx", r_line.allx)
+        print("l_line.ally",l_line.ally)
+        print("r_line.ally", r_line.ally)
+        print("r_line.bestx", r_line.bestx)
+        print("l_line.bestx",l_line.bestx)
+        print("r_line.best_fit",r_line.best_fit)
+        print("l_line.best_fit",l_line.best_fit)
+        print("r_line.current_fit",r_line.current_fit)
+        print("l_line.current_fit",l_line.current_fit)
+        
+    new_img = np.copy(img)
+    img_bin, Minv = pipeline_image_processing(new_img,imagename)
+    if debug_flag == True:
+        print('completed pipeline process for ',imagename)
+    
+    # if both left and right lines were detected last frame, use polyfit_using_prev_fit, otherwise use sliding window
+    if not l_line.detected or not r_line.detected:
+        if debug_flag == True:
+            print('starting sliding window polyfit for first iamge')
+        l_fit, r_fit, l_lane_inds, r_lane_inds, histogram = sliding_window_polyfit(img_bin)
+        if debug_flag == True:
+            print("left fit from sliding window output is ", l_fit)
+            print("right fit from sliding window output is ", r_fit)
+            print("left lane indic from sliding window output is ", l_lane_inds)
+            print("right lane indic from sliding window output is ", r_lane_inds)
+            
+        if output_flag == True:
+            print('histogram for image',imagename)
+            plt.plot(histogram)
+            plt.xlim(0, 1280)
+            plt.show()
+            print('...')
+    else:
+        l_fit, r_fit, l_lane_inds, r_lane_inds =  polyfit_next_fit(img_bin, l_line.best_fit, r_line.best_fit)
+        if debug_flag == True:
+            print('starting sliding window polyfit for subsequent images')
+            print(l_line.best_fit)
+            print("left fit is ", l_fit)
+            print("right fit is ", r_fit)
+        
+    # invalidate both fits if the difference in their x-intercepts isn't around 350 px (+/- 100 px)
+    if l_fit is not None and r_fit is not None:
+        if debug_flag == True:
+            print('Fit not found for ',imagename)
+        # calculate x-intercept (bottom of image, x=image_height) for fits
+        h = img.shape[0]
+        l_fit_x_int = l_fit[0]*h**2 + l_fit[1]*h + l_fit[2]
+        r_fit_x_int = r_fit[0]*h**2 + r_fit[1]*h + r_fit[2]
+        x_int_diff = abs(r_fit_x_int-l_fit_x_int)
+        if abs(350 - x_int_diff) > 100:
+            l_fit = None
+            r_fit = None
+    else:
+        if debug_flag == True:
+            print('image invalidated failed',img)
+    
+    if debug_flag == True:
+            print('adding right and left fit to class',imagename) 
+            print('fit class values before adding')
+            print("l-allx",l_line.allx)
+            print("r-allx", r_line.allx)
+            print("l_line.ally",l_line.ally)
+            print("r_line.ally", r_line.ally)
+            print("r_line.bestx", r_line.bestx)
+            print("l_line.bestx",l_line.bestx)
+            print("r_line.best_fit",r_line.best_fit)
+            print("l_line.best_fit",l_line.best_fit)
+            print("r_line.current_fit",r_line.current_fit)
+            print("l_line.current_fit",l_line.current_fit)
+            print("adding l_fit",l_fit)
+            print("adding r_fit",r_fit)
+            
+            
+    l_line.add_fit(l_fit, l_lane_inds)
+    r_line.add_fit(r_fit, r_lane_inds)
+    if debug_flag == True:
+            print('added right and left fit to class',imagename) 
+            print('fit class values after adding')
+            print("r-allx", r_line.allx)
+            print("l_line.ally",l_line.ally)
+            print("r_line.ally", r_line.ally)
+            print("r_line.bestx", r_line.bestx)
+            print("l_line.bestx",l_line.bestx)
+            print("r_line.best_fit",r_line.best_fit)
+            print("l_line.best_fit",l_line.best_fit)
+            print("r_line.current_fit",r_line.current_fit)
+            print("l_line.current_fit",l_line.current_fit)
+            
+    # draw the current best fit if it exists
+    if l_line.current_fit is not None and r_line.current_fit is not None:
+        if debug_flag == True:
+            print('best fit found',img)
+        img_out1 = draw_lane(new_img, img_bin, l_line.best_fit, r_line.best_fit, Minv)
+        rad_l, rad_r, d_center = calculate_rad(img_bin, l_line.best_fit, r_line.best_fit, 
+                                                               l_lane_inds, r_lane_inds)
+        img_out = draw_curvature(img_out1, (rad_l+rad_r)/2, d_center)
+        
+    else:
+        print('best fit not found',imagename)
+        img_out = new_img
+        
+    if final_flag == True:
+        draw_simple_chart(img,img_out,"original","final")
+    return img_out
+    
+    def sliding_window_polyfit(img):
+    
+    if debug_flag == True:
+        print('starting sliding window polyfit')
+       
+    histogram = np.sum(img[img.shape[0]//2:,:], axis=0)
+    
+    # Create an output image to draw on and  visualize the result
+    out_img = np.dstack((img, img, img))*255
+    
+    # Find the peak of the left and right halves of the histogram
+    # These will be the starting point for the left and right lines
+    midpoint = np.int(histogram.shape[0]//2)
+    leftx_base = np.argmax(histogram[:midpoint])
+    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+    if debug_flag == True:
+        print("midpoint of histogram is", midpoint)
+        print("leftx_base of histogram is", leftx_base)
+        print("rightx_base of histogram is", rightx_base)
+        
+    # Choose the number of sliding windows
+    nwindows = 10
+    
+    # Set height of windows
+    window_height = np.int(img.shape[0]/nwindows)
+    
+    # Identify the x and y positions of all nonzero pixels in the image
+    nonzero = img.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    
+      
+    # Current positions to be updated for each window
+    leftx_current = leftx_base
+    rightx_current = rightx_base
+    
+    if debug_flag == True:
+        print("nonzeroy is ", nonzeroy)
+        print("nonzerox is ", nonzerox)
+        print("current position lefx", leftx_current )
+        print("current position rightx", rightx_current )
+        
+    # Set the width of the windows +/- margin
+    margin = 80
+    
+    # Set minimum number of pixels found to recenter window
+    minpix = 50
+    
+    # Create empty lists to receive left and right lane pixel indices
+    left_lane_inds = []
+    right_lane_inds = []
+
+    # Step through the windows one by one
+    for window in range(nwindows):
+        # Identify window boundaries in x and y (and right and left)
+        win_y_low = img.shape[0] - (window+1)*window_height
+        win_y_high = img.shape[0] - window*window_height
+        win_xleft_low = leftx_current - margin
+        win_xleft_high = leftx_current + margin
+        win_xright_low = rightx_current - margin
+        win_xright_high = rightx_current + margin
+        # Draw the windows on the visualization image
+        cv2.rectangle(out_img,(win_xleft_low,win_y_low),(win_xleft_high,win_y_high),
+        (0,255,0), 2) 
+        cv2.rectangle(out_img,(win_xright_low,win_y_low),(win_xright_high,win_y_high),
+        (0,255,0), 2) 
+        # Identify the nonzero pixels in x and y within the window
+        good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & 
+        (nonzerox >= win_xleft_low) &  (nonzerox < win_xleft_high)).nonzero()[0]
+        good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & 
+        (nonzerox >= win_xright_low) &  (nonzerox < win_xright_high)).nonzero()[0]
+        # Append these indices to the lists
+        left_lane_inds.append(good_left_inds)
+        right_lane_inds.append(good_right_inds)
+        # If you found > minpix pixels, recenter next window on their mean position
+        if len(good_left_inds) > minpix:
+            leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
+        if len(good_right_inds) > minpix:        
+            rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
+        if debug_flag == True:
+            print("window is ", window)
+            print("win_y_low", win_y_low)
+            print("win_y_high", win_y_high)
+            print("win_xleft_low",win_xleft_low)
+            print("win_xleft_high",win_xleft_high)
+            print("win_xright_low",win_xright_low)
+            print("win_xright_high",win_xright_high)
+            print("good_left_inds",good_left_inds)
+            print("good_right_inds",good_right_inds)
+            
+
+    # Concatenate the arrays of indices
+    left_lane_inds = np.concatenate(left_lane_inds)
+    right_lane_inds = np.concatenate(right_lane_inds)
+
+    # Extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds] 
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds] 
+    left_fit,right_fit = (None,None
+                         )
+    # Fit a second order polynomial to each
+    if debug_flag == True:
+        print("leftx is ", leftx)
+        print("lefty is ", lefty)
+        print("rightx is ", rightx)
+        print("righty is ", righty)
+        
+    if len(leftx) != 0:
+        left_fit = np.polyfit(lefty, leftx, 2)
+    if len(rightx) != 0:
+        right_fit = np.polyfit(righty, rightx, 2)
+    
+    #########################start visualization #####################################
+    if output_flag == True:
+        ploty = np.linspace(0,img.shape[0]-1,img.shape[0])
+    
+        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+        plt.imshow(out_img)
+        plt.plot(left_fitx, ploty, color='yellow')
+        plt.plot(right_fitx, ploty, color='yellow')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+        plt.show()
+    del nonzero
+    del nonzerox
+    del nonzeroy
+    return left_fit,right_fit, left_lane_inds,right_lane_inds,histogram
+
+# this function is used for subsequent images to fit based on the previous fit
+
+def  polyfit_next_fit(img, left_fit, right_fit):
+    if debug_flag == True:
+        print("left fit input to polyfit_next_fit is ", left_fit)
+        print("right fit input to polyfit_next_fit is", right_fit)
+        
+    nonzero = img.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    margin = 80
+    left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + 
+    left_fit[2] - margin)) & (nonzerox < (left_fit[0]*(nonzeroy**2) + 
+    left_fit[1]*nonzeroy + left_fit[2] + margin))) 
+
+    right_lane_inds = ((nonzerox > (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + 
+    right_fit[2] - margin)) & (nonzerox < (right_fit[0]*(nonzeroy**2) + 
+    right_fit[1]*nonzeroy + right_fit[2] + margin)))  
+
+    # Again, extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds] 
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+    
+    if debug_flag == True:
+        print("left fit input is ", left_fit)
+        print("right fit input is ", right_fit)
+        print("leftx is ", leftx)
+        print("lefty is ", lefty)
+        print("rightx is ", rightx)
+        print("righty is ", righty)
+        
+    left_fit,right_fit = (None,None)
+        
+    # Fit a second order polynomial to each
+    if len(leftx) != 0:
+        left_fit = np.polyfit(lefty, leftx, 2)
+    if len(rightx) != 0:
+        right_fit = np.polyfit(righty, rightx, 2)
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, img.shape[0]-1, img.shape[0] )
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+    
+    # start visualization ################################################
+    if output_flag == True:
+        out_img = np.dstack((img, img, img))*255
+        window_img = np.zeros_like(out_img)
+
+        # Color in left and right line pixels
+        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+        # Generate a polygon to illustrate the search window area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-margin, ploty]))])
+        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx+margin, 
+                                      ploty])))])
+        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx-margin, ploty]))])
+        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+margin, 
+                                      ploty])))])
+        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
+        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
+        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+        plt.imshow(result)
+        plt.plot(left_fitx, ploty, color='yellow')
+        plt.plot(right_fitx, ploty, color='yellow')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+        plt.show()
+        
+    del nonzero
+    del nonzerox
+    del nonzeroy
+    return left_fit,right_fit, left_lane_inds,right_lane_inds
+
+def draw_lane(original_img, binary_img, l_fit, r_fit, Minv):
+    
+    new_img = np.copy(original_img)
+   
+    if l_fit is None or r_fit is None:
+        print("no fit found. returning original image")
+        return original_img
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(binary_img).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+    
+    h,w = binary_img.shape
+    ploty = np.linspace(0, h-1, num=h)# to cover same y-range as image
+    
+    if debug_flag == True:
+        print("shape of ploty", ploty)
+    left_fitx = l_fit[0]*ploty**2 + l_fit[1]*ploty + l_fit[2]
+    right_fitx = r_fit[0]*ploty**2 + r_fit[1]*ploty + r_fit[2]
+    
+    if debug_flag == True:
+        print("starting drawing lane")
+        print("left fit is ", l_fit)
+        print("right fit is ", r_fit)
+        print('left fitx is', left_fitx)
+        print('right fitx is ', right_fitx)
+        print("ploty is ",ploty)
+
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    cv2.polylines(color_warp, np.int32([pts_left]), isClosed=False, color=(255,0,255), thickness=15)
+    cv2.polylines(color_warp, np.int32([pts_right]), isClosed=False, color=(0,255,255), thickness=15)
+    
+    if output_flag == True:
+        draw_simple_chart(original_img,color_warp,"original","polyfill-blank")
+    
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (w, h)) 
+    
+    if output_flag == True:
+        draw_simple_chart(original_img,newwarp,"original","polyfil-warp")
+    
+    # Combine the result with the original image
+    result = cv2.addWeighted(new_img, 1, newwarp, 0.5, 0)
+    
+    if output_flag == True:
+        draw_simple_chart(original_img,result,"original","polyfil-original")
+    
+    return result
+
+```
+
+
+Here is the output
+
+![png](output_6_9.png)
+
+
+    histogram for image test1.jpg
+
+
+
+![png](output_6_11.png)
+
+
+    ...
+
+
+
+![png](output_6_13.png)
+
+
+
+![png](output_6_14.png)
+
+
+
+![png](output_6_15.png)
+
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+Below is the code:
+
+```python
+
+# function to determine radius of curvature and distance from lane center based on binary image, polynomial fit
+def calculate_rad(bin_img, l_fit, r_fit, l_lane_inds, r_lane_inds):
+    
+    # Define conversions from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension, lane line is 10 ft = 3.048 meters
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension, lane width is 12 ft = 3.7 meters
+    
+    left_curverad, right_curverad, center_dist = (0, 0, 0)
+    
+    # choose the maximum y-value (bottom of the image)
+    h = bin_img.shape[0]
+    ploty = np.linspace(0, h-1, h)
+    y_eval = np.max(ploty)
+  
+    # Identify the x and y positions of all nonzero pixels in the image
+    nonzero = bin_img.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    
+    # Extract left and right line pixel positions
+    leftx = nonzerox[l_lane_inds]
+    lefty = nonzeroy[l_lane_inds] 
+    rightx = nonzerox[r_lane_inds]
+    righty = nonzeroy[r_lane_inds]
+    
+    if len(leftx) != 0 and len(rightx) != 0:
+        
+        # Fit new polynomials to x,y in world space
+        left_fit_cr = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
+        right_fit_cr = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+        
+        # Calculate the new radii of curvature
+        left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+        right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+        
+        # Now our radius of curvature is in meters
+    
+    # Distance from center is image x midpoint - mean of l_fit and r_fit intercepts 
+    if r_fit is not None and l_fit is not None:
+        car_position = bin_img.shape[1]/2
+        l_fit_x_int = l_fit[0]*h**2 + l_fit[1]*h + l_fit[2]
+        r_fit_x_int = r_fit[0]*h**2 + r_fit[1]*h + r_fit[2]
+        lane_center_position = (r_fit_x_int + l_fit_x_int) /2
+        center_dist = (car_position - lane_center_position) * xm_per_pix
+    return left_curverad, right_curverad, center_dist
+    
+    
+    def draw_curvature(original_img, curv_rad, center_dist):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    new_img = np.copy(original_img)
+    h = new_img.shape[0]
+    text = 'Curve radius: ' + '{:04.1f}'.format(curv_rad) + 'm'
+    cv2.putText(new_img, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    direction = ''
+    if center_dist > 0:
+        direction = 'right'
+    elif center_dist < 0:
+        direction = 'left'
+    abs_center_dist = abs(center_dist)
+    text = '{:04.1f}'.format(abs_center_dist) + 'm ' + direction + ' of center'
+    cv2.putText(new_img, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    return new_img
+
+def write_Text(original_img, curv_rad, center_dist):
+    new_img = np.copy(original_img)
+    h = new_img.shape[0]
+    text = 'Radius of curve is: ' + '{:04.2f}'.format(curv_rad) + 'm'
+    cv2.putText(new_img, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    direction = ''
+    if center_dist > 0:
+        direction = 'right'
+    elif center_dist < 0:
+        direction = 'left'
+    abs_center_dist = abs(center_dist)
+    text = '{:04.3f}'.format(abs_center_dist) + 'm ' + direction + ' of center'
+    cv2.putText(new_img, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    return new_img
+
+```
+
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
 I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
 
-![alt text][image6]
 
----
+![png](output_6_16.png)
+
 
 ### Pipeline (video)
 
@@ -1029,7 +1544,8 @@ def pipeline_image_processing(test_img,imagename):
         print("src is ", src)
         print("dest is ", dst)
     # perspective transformation
-    vertices = np.array([[300, 0], [300,700], [1000,700], [1000,0]])
+    
+    = np.array([[300, 0], [300,700], [1000,700], [1000,0]])
    
     test_img_unwarp, M, Minv = unwarp_image(test_img_undistort,src,dst)
 
